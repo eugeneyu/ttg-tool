@@ -1,8 +1,16 @@
 /**
  * local server entry file, for local development
  */
-import app from './app.js';
-import { initRuntime } from './state.js';
+if (!(globalThis as any).File) {
+  try {
+    const { File } = await import('node:buffer')
+    ;(globalThis as any).File = File
+  } catch {
+    ;(globalThis as any).File = class File {}
+  }
+}
+
+const [{ default: app }, { initRuntime }] = await Promise.all([import('./app.js'), import('./state.js')])
 
 /**
  * start server with port
