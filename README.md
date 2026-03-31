@@ -88,6 +88,30 @@ Target: a Linux VM (e.g. GCE VM running Ubuntu 22.04).
 
 - Backend API listens on `PORT` (default `3001`).
 - Frontend is a static build (served by Nginx or any static server).
+
+#### Choosing the External UI Port
+
+The "external UI port" is the port your browser connects to.
+
+- **Dev (Vite)**: choose it with Vite flags:
+
+```bash
+cd ttg-tool
+npm run dev -- --host 0.0.0.0 --port 8080
+```
+
+- **Production (static build)**: you choose it in your static server:
+  - With a simple CLI server:
+
+```bash
+cd ttg-tool
+npm run build
+npx serve -s dist -l 8080
+```
+
+  - With Nginx: set `listen 8080;` (or `80/443`) in your server block.
+
+The backend port is independent. You can keep API on `3001` and expose UI on `80/443` (recommended).
 - Persistent data:
   - `api/.data/ttg-config.enc.json` (encrypted config)
   - `api/.data/ttg-passphrase.txt` (generated passphrase if `TTG_CONFIG_PASSPHRASE` is not set)
@@ -162,6 +186,56 @@ RestartSec=3
 WantedBy=multi-user.target
 ```
 
+**How the port is set in systemd**
+
+- The API listens on the value of the `PORT` environment variable.
+- In `systemd`, you set it with `Environment=PORT=3001` inside the unit file (as above), or by using an `EnvironmentFile=`.
+
+**How the Web UI port is set in systemd**
+
+This project’s Web UI is a static build (`ttg-tool/dist`). It does **not** read `PORT`. The UI port is chosen by the **static server** you run:
+
+- If you use **Nginx**, set the port with `listen <port>;` in the Nginx site config (recommended).
+- If you run a simple static server like `serve`, set the port via its CLI flag (example below).
+
+Example `systemd` service to serve the UI on port `8080` using `serve`:
+
+`/etc/systemd/system/ttg-tool-ui.service`
+
+```ini
+[Unit]
+Description=TTG Tool UI (static)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/ttg-tool
+ExecStart=/usr/bin/npx serve -s dist -l 8080
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+If you instead want UI on `80/443`, use Nginx (and optionally proxy `/api/` to the API service on `127.0.0.1:3001`).
+
+Example using an env file:
+
+`/etc/default/ttg-tool`
+
+```bash
+PORT=3001
+TTG_CONFIG_PASSPHRASE=your-long-random-secret
+```
+
+Then in the unit:
+
+```ini
+EnvironmentFile=/etc/default/ttg-tool
+```
+
 Enable + start:
 
 ```bash
@@ -194,4 +268,3 @@ If scans always fail “Not logged in”:
 
 - Do not commit `api/.data/` (it’s ignored via `.gitignore`).
 - Treat `TTG_CONFIG_PASSPHRASE` and Cookie Header as secrets.
-
