@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "client:dev": "vite",
+    "server:start": "node --import tsx api/server.ts",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",

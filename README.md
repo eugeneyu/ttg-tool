@@ -166,11 +166,11 @@ npm run build
 Start the backend:
 
 ```bash
-cd api
 export NODE_ENV=production
 export PORT=3001
 export TTG_CONFIG_PASSPHRASE='your-long-random-secret'
-npm run start
+cd ttg-tool
+npm run server:start
 ```
 
 Serve the frontend build output from `ttg-tool/dist` using Nginx (recommended) or any static server.
@@ -189,11 +189,11 @@ After=network.target
 [Service]
 Type=simple
 User=www-data
-WorkingDirectory=/opt/ttg-tool/api
+WorkingDirectory=/opt/ttg-tool
 Environment=NODE_ENV=production
 Environment=PORT=3001
 Environment=TTG_CONFIG_PASSPHRASE=your-long-random-secret
-ExecStart=/usr/bin/node /opt/ttg-tool/api/dist/server.js
+ExecStart=/usr/bin/npm run server:start
 Restart=always
 RestartSec=3
 
@@ -235,6 +235,19 @@ WantedBy=multi-user.target
 ```
 
 If you instead want UI on `80/443`, use Nginx (and optionally proxy `/api/` to the API service on `127.0.0.1:3001`).
+
+### Quick API Health Check
+
+On the VM:
+
+```bash
+curl -sS http://127.0.0.1:3001/api/health
+```
+
+If that fails:
+
+- Check the API service status: `systemctl status ttg-tool` and `journalctl -u ttg-tool -n 200 --no-pager`
+- Check if anything is listening: `ss -ltnp | grep 3001`
 
 Example using an env file:
 
