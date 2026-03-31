@@ -3,6 +3,35 @@ import type { BrowseHistory, BrowseWindowBoundary, ScanResult, TtgConfig } from 
 type ApiOk<T> = T & { ok: true };
 type ApiErr = { ok: false; error: string };
 
+function isProbablyHtml(text: string): boolean {
+  const t = text.trimStart().slice(0, 200).toLowerCase();
+  return t.startsWith("<!doctype") || t.startsWith("<html") || t.includes("<head") || t.includes("<body");
+}
+
+function resolveUrl(path: string): string {
+  const envBase = (import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined;
+  const base = envBase && envBase.trim() ? envBase.trim().replace(/\/$/, "") : "";
+  if (/^https?:\/\//i.test(path)) return path;
+  return base ? `${base}${path}` : path;
+}
+
+async function fetchWithApiFallback(url: string, init?: RequestInit): Promise<Response> {
+  const primaryUrl = resolveUrl(url)
+  const res = await fetch(primaryUrl, { credentials: "same-origin", ...init })
+  const targetLooksLocal = !/^https?:\/\//i.test(url) && url.startsWith("/api/")
+  const envBase = (import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined
+  const hasExplicitBase = Boolean(envBase && envBase.trim())
+  if (!res.ok || !targetLooksLocal || hasExplicitBase) return res
+
+  const contentType = res.headers.get("Content-Type") || ""
+  if (!contentType.toLowerCase().includes("text/html")) return res
+
+  const host = window.location.hostname
+  const protocol = window.location.protocol
+  const fallbackUrl = `${protocol}//${host}:3001${url}`
+  return await fetch(fallbackUrl, { credentials: "omit", ...init })
+}
+
 async function readJson<T>(res: Response): Promise<T> {
   const text = await res.text();
   if (!text.trim()) {
@@ -11,34 +40,66 @@ async function readJson<T>(res: Response): Promise<T> {
   try {
     return JSON.parse(text) as T;
   } catch {
+    if (isProbablyHtml(text)) {
+      throw new Error(`Invalid JSON response (${res.status}): received HTML (check /api proxy or API base URL)`);
+    }
     throw new Error(`Invalid JSON response (${res.status})`);
   }
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<ApiOk<T>> {
-  const doFetch = async (): Promise<Response> => {
-    return await fetch(url, {
-      credentials: "same-origin",
+  const doFetch = async (targetUrl: string, credentials: RequestCredentials): Promise<Response> => {
+    return await fetch(targetUrl, {
       headers: { "Content-Type": "application/json" },
       ...init,
+      credentials,
     });
   };
 
   let res: Response;
   try {
-    res = await doFetch();
+    res = await doFetch(resolveUrl(url), "same-origin");
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") {
       throw new Error("Request cancelled");
     }
     if (e instanceof TypeError && String(e.message).includes("Failed to fetch")) {
       await new Promise((r) => setTimeout(r, 250));
-      res = await doFetch();
+      res = await doFetch(resolveUrl(url), "same-origin");
     } else {
       throw e;
     }
   }
-  const data = await readJson<ApiOk<T> | ApiErr>(res);
+
+  const text = await res.text();
+  const targetLooksLocal = !/^https?:\/\//i.test(url) && url.startsWith("/api/");
+  const envBase = (import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined;
+  const hasExplicitBase = Boolean(envBase && envBase.trim());
+  if (res.ok && targetLooksLocal && !hasExplicitBase && isProbablyHtml(text)) {
+    const host = window.location.hostname;
+    const protocol = window.location.protocol;
+    const fallbackUrl = `${protocol}//${host}:3001${url}`;
+    const fallbackRes = await doFetch(fallbackUrl, "omit");
+    const fallbackData = await readJson<ApiOk<T> | ApiErr>(fallbackRes);
+    if (!fallbackRes.ok || !fallbackData.ok) {
+      const msg = (fallbackData as ApiErr).error || `Request failed: ${fallbackRes.status}`;
+      throw new Error(msg);
+    }
+    return fallbackData as ApiOk<T>;
+  }
+
+  if (!text.trim()) {
+    throw new Error(`Empty response (${res.status})`);
+  }
+  let data: ApiOk<T> | ApiErr;
+  try {
+    data = JSON.parse(text) as ApiOk<T> | ApiErr;
+  } catch {
+    if (isProbablyHtml(text)) {
+      throw new Error(`Invalid JSON response (${res.status}): received HTML (check /api proxy or API base URL)`);
+    }
+    throw new Error(`Invalid JSON response (${res.status})`);
+  }
   if (!res.ok || !data.ok) {
     const msg = (data as ApiErr).error || `Request failed: ${res.status}`;
     throw new Error(msg);
@@ -90,20 +151,14 @@ export async function scan(mode: "sinceCheckpoint" | "full", page?: number): Pro
 }
 
 export async function getLastResults(): Promise<ScanResult | null> {
-  const res = await fetch("/api/results/last", { credentials: "same-origin" });
-  const data = await readJson<
-    | { ok: true; runId: string | null; matched: unknown[]; stats: unknown }
-    | ApiErr
-  >(res);
-  if (!data.ok) throw new Error((data as ApiErr).error);
+  const data = await requestJson<{ runId: string | null; matched: unknown[]; stats: unknown }>("/api/results/last");
   if (!data.runId) return null;
   return data as unknown as ScanResult;
 }
 
 export async function exportRun(runId: string, format: "csv" | "json"): Promise<void> {
-  const res = await fetch("/api/results/export", {
+  const res = await fetchWithApiFallback("/api/results/export", {
     method: "POST",
-    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ runId, format }),
   });

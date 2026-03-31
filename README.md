@@ -112,6 +112,17 @@ npx serve -s dist -l 8080
   - With Nginx: set `listen 8080;` (or `80/443`) in your server block.
 
 The backend port is independent. You can keep API on `3001` and expose UI on `80/443` (recommended).
+
+If you serve the UI on a different port (e.g. `8080`) without a reverse proxy, `/api/...` requests will hit the UI server and return HTML. In that case either:
+
+- Use Nginx to proxy `/api/` to the API service, or
+- Run the API on `:3001` and let the UI call the API directly.
+
+For direct-calling, you can also build with an explicit API base:
+
+```bash
+VITE_API_BASE_URL=http://YOUR_VM_HOSTNAME_OR_IP:3001 npm run build
+```
 - Persistent data:
   - `api/.data/ttg-config.enc.json` (encrypted config)
   - `api/.data/ttg-passphrase.txt` (generated passphrase if `TTG_CONFIG_PASSPHRASE` is not set)
