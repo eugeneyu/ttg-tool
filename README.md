@@ -284,6 +284,11 @@ PORT=3001 NODE_ENV=production TTG_CONFIG_PASSPHRASE='your-long-random-secret' \
   pm2 start "npm run server:start" --name ttg-api
 ```
 
+If `ttg-api` crashes with `Unsupported state or unable to authenticate data`, your encrypted config was written with a different passphrase. Fix by either:
+
+- Setting `TTG_CONFIG_PASSPHRASE` to the original value used to create `api/.data/ttg-config.enc.json`, or
+- Deleting `api/.data/ttg-config.enc.json` (you will need to re-enter Settings).
+
 Start the UI (port `8080`):
 
 ```bash

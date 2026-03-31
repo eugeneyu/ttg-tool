@@ -80,8 +80,23 @@ export async function configExists(): Promise<boolean> {
 export async function readConfig(): Promise<TtgConfig | null> {
   if (!(await configExists())) return null
   const passphrase = getConfigPassphrase()
-  const parsed = await readEncryptedJsonFile<TtgConfig>(CONFIG_PATH, passphrase)
-  return ttgConfigSchema.parse(parsed) as TtgConfig
+  try {
+    const parsed = await readEncryptedJsonFile<TtgConfig>(CONFIG_PATH, passphrase)
+    return ttgConfigSchema.parse(parsed) as TtgConfig
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (/authenticate data|bad decrypt|unsupported state/i.test(message)) {
+      const backupPath = `${CONFIG_PATH}.corrupt-${Date.now()}`
+      try {
+        await fs.rename(CONFIG_PATH, backupPath)
+      } catch {
+        // ignore
+      }
+      console.error(`Failed to decrypt TTG config. Moved to ${backupPath}. Reconfigure settings or set TTG_CONFIG_PASSPHRASE to the original value.`)
+      return null
+    }
+    throw err
+  }
 }
 
 export async function writeConfig(config: TtgConfig): Promise<void> {
