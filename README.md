@@ -20,6 +20,7 @@ A small web app that crawls your `totheglory.im` browse pages, applies local fil
   - [Install Dependencies](#install-dependencies)
   - [Build and Run](#build-and-run)
   - [Run as a Service (systemd)](#run-as-a-service-systemd)
+- [Run with PM2](#run-with-pm2)
   - [Reverse Proxy (optional)](#reverse-proxy-optional)
   - [Troubleshooting Login](#troubleshooting-login)
 
@@ -248,6 +249,63 @@ If that fails:
 
 - Check the API service status: `systemctl status ttg-tool` and `journalctl -u ttg-tool -n 200 --no-pager`
 - Check if anything is listening: `ss -ltnp | grep 3001`
+
+### Run with PM2
+
+PM2 can manage both:
+
+- the **API** process on `PORT` (default `3001`), and
+- a **static UI** server (example uses `serve` on `8080`).
+
+Prereqs:
+
+```bash
+cd ttg-tool
+npm ci
+npm run build
+npm i -g pm2
+```
+
+If you see `ecosystem.config.js is not found`, it usually means you ran `pm2 start ecosystem.config.js` from the wrong directory or the file doesn’t exist.
+
+This repo includes an example config: `ecosystem.config.cjs`.
+
+Start both processes via the ecosystem file:
+
+```bash
+cd ttg-tool
+pm2 start ecosystem.config.cjs
+```
+
+Start the API (port `3001`):
+
+```bash
+PORT=3001 NODE_ENV=production TTG_CONFIG_PASSPHRASE='your-long-random-secret' \
+  pm2 start "npm run server:start" --name ttg-api
+```
+
+Start the UI (port `8080`):
+
+```bash
+pm2 start "npx serve -s dist -l 8080" --name ttg-ui
+```
+
+Check:
+
+```bash
+pm2 status
+pm2 logs ttg-api
+curl -sS http://127.0.0.1:3001/api/health
+```
+
+Persist across reboots:
+
+```bash
+pm2 save
+pm2 startup
+```
+
+If your UI is on a different origin/port than the API, prefer using Nginx to proxy `/api/` to `127.0.0.1:3001`.
 
 Example using an env file:
 
