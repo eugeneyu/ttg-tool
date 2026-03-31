@@ -118,11 +118,15 @@ If you serve the UI on a different port (e.g. `8080`) without a reverse proxy, `
 - Use Nginx to proxy `/api/` to the API service, or
 - Run the API on `:3001` and let the UI call the API directly.
 
+If the UI is served over **HTTPS**, the API must also be reachable over **HTTPS** (or via same-origin reverse proxy). Browsers block `https://...` pages from calling `http://...` APIs (mixed content).
+
 For direct-calling, you can also build with an explicit API base:
 
 ```bash
 VITE_API_BASE_URL=http://YOUR_VM_HOSTNAME_OR_IP:3001 npm run build
 ```
+
+Or store it in the browser (runtime override): set `localStorage.ttg_api_base_url` to your API base URL.
 - Persistent data:
   - `api/.data/ttg-config.enc.json` (encrypted config)
   - `api/.data/ttg-passphrase.txt` (generated passphrase if `TTG_CONFIG_PASSPHRASE` is not set)

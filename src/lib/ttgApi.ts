@@ -10,7 +10,15 @@ function isProbablyHtml(text: string): boolean {
 
 function resolveUrl(path: string): string {
   const envBase = (import.meta as any)?.env?.VITE_API_BASE_URL as string | undefined;
-  const base = envBase && envBase.trim() ? envBase.trim().replace(/\/$/, "") : "";
+  const storedBase = (() => {
+    try {
+      return window.localStorage.getItem("ttg_api_base_url") ?? "";
+    } catch {
+      return "";
+    }
+  })();
+  const baseRaw = envBase && envBase.trim() ? envBase : storedBase;
+  const base = baseRaw && baseRaw.trim() ? baseRaw.trim().replace(/\/$/, "") : "";
   if (/^https?:\/\//i.test(path)) return path;
   return base ? `${base}${path}` : path;
 }
@@ -65,7 +73,17 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<ApiOk<T>
     }
     if (e instanceof TypeError && String(e.message).includes("Failed to fetch")) {
       await new Promise((r) => setTimeout(r, 250));
-      res = await doFetch(resolveUrl(url), "same-origin");
+      try {
+        res = await doFetch(resolveUrl(url), "same-origin");
+      } catch {
+        const host = typeof window !== "undefined" ? window.location.hostname : "<host>";
+        const proto = typeof window !== "undefined" ? window.location.protocol : "http:";
+        const hint =
+          proto === "https:"
+            ? `API must be reachable over HTTPS or behind a reverse proxy (mixed-content blocks http://).`
+            : `Ensure the API is running and reachable (e.g. http://${host}:3001/api/health), or configure a reverse proxy for /api.`;
+        throw new Error(`Failed to fetch. ${hint}`);
+      }
     } else {
       throw e;
     }
